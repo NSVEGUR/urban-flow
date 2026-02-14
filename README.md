@@ -18,28 +18,35 @@ UrbanFlow is a **comprehensive traffic forecasting system** for urban junctions.
 
 ```mermaid
 graph TB
+
     subgraph Data
-        A[traffic.csv<br/>48,120 rows × 4 junctions] --> B[Feature Engineering]
+        A[traffic.csv 48120 rows 4 junctions] --> B[Feature Engineering]
         B --> C[traffic_augmented.csv]
     end
 
-    subgraph Pipeline 1 – Classic
-        C --> D[Baselines<br/>Naive / ARIMA / XGBoost per-junction]
-        C --> E[Univariate GRU<br/>per-junction]
-        C --> F[Spatio-Temporal GRU<br/>cross-junction]
+    subgraph Pipeline_1_Classic
+        C --> D[Baselines Naive ARIMA XGBoost per junction]
+        C --> E[Univariate GRU per junction]
+        C --> F[Spatio Temporal GRU cross junction]
     end
 
-    subgraph Pipeline 2 – SOTA
-        C --> G[Temporal Fusion Transformer<br/>attention + quantiles]
+    subgraph Pipeline_2_SOTA
+        C --> G[Temporal Fusion Transformer attention quantiles]
     end
 
-    subgraph Pipeline 3 – Uncertainty
-        E -.-> H[MC Dropout GRU<br/>Bayesian CI]
-        G -.-> I[Quantile TFT<br/>prediction intervals]
-        D -.-> J[Quantile XGBoost<br/>prediction intervals]
+    subgraph Pipeline_3_Uncertainty
+        E -.-> H[MC Dropout GRU Bayesian CI]
+        G -.-> I[Quantile TFT prediction intervals]
+        D -.-> J1[Quantile XGBoost prediction intervals]
     end
 
-    D & E & F & G & H & I --> J[Evaluation & Comparison<br/>RMSE / MAE / MAPE]
+    D --> K[Evaluation RMSE MAE MAPE]
+    E --> K
+    F --> K
+    G --> K
+    H --> K
+    I --> K
+    J1 --> K
 ```
 
 ---
