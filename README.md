@@ -145,8 +145,6 @@ _Note: XGBoost outperforms deep learning baselines in this configuration, highli
 
 > _Note: TFT uncertainty requires further calibration. XGBoost currently provides the most reliable intervals._
 
-> _Table will be filled after training. Run all pipelines to generate `app/results/full_comparison.csv`._
-
 **Key Insights:**
 
 - Spatial modeling captures cross-junction dependencies, reducing RMSE.
