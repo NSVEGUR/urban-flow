@@ -166,9 +166,3 @@ _Note: XGBoost outperforms deep learning baselines in this configuration, highli
 - **matplotlib / seaborn** – Publication-quality visualizations
 
 ---
-
-## References
-
-- Gal & Ghahramani, _"Dropout as a Bayesian Approximation"_, ICML 2016.
-- Lim et al., _"Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting"_, IJF 2021.
-- Original report in `basic/report_II.pdf`.
