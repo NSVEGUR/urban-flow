@@ -17,7 +17,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from  app.config import (
+from app.classic.univariate_gru import UniGRU, train_uni_gru
+from app.config import (
     CONFIDENCE_LEVEL,
     DEVICE,
     FORECAST_HORIZON,
@@ -25,10 +26,8 @@ from  app.config import (
     GRU_NUM_LAYERS,
     MC_DROPOUT,
     MC_SAMPLES,
-    MODELS_DIR,
 )
-from  app.classic.univariate_gru import UniGRU, train_uni_gru
-from  app.evaluation import calibration_score, compute_all_metrics
+from app.evaluation import calibration_score, compute_all_metrics, crps_gaussian
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,7 @@ class MCDropoutGRU(UniGRU):
                 pred = self.forward(x)  # (batch, horizon)
                 samples.append(pred.cpu().numpy())
 
-        samples = np.stack(samples, axis=0)   # (n_samples, batch, horizon)
+        samples = np.stack(samples, axis=0)  # (n_samples, batch, horizon)
         mean = samples.mean(axis=0)
         std = samples.std(axis=0)
 
@@ -103,6 +102,7 @@ class MCDropoutGRU(UniGRU):
 # ──────────────────────────────────────────────
 # Training  (uses same loop as UniGRU)
 # ──────────────────────────────────────────────
+
 
 def train_mc_gru(
     model: MCDropoutGRU,
@@ -119,10 +119,11 @@ def train_mc_gru(
 # Evaluation with Uncertainty
 # ──────────────────────────────────────────────
 
+
 def evaluate_mc_gru(
     model: MCDropoutGRU,
     test_dl: DataLoader,
-    pipeline,             
+    pipeline,
     junction_id: int,
     n_samples: int = MC_SAMPLES,
     confidence: float = CONFIDENCE_LEVEL,
@@ -142,7 +143,9 @@ def evaluate_mc_gru(
     for X_batch, y_batch in test_dl:
         X_batch = X_batch.to(device)
         mean, std, lower, upper = model.predict_with_uncertainty(
-            X_batch, n_samples=n_samples, confidence=confidence,
+            X_batch,
+            n_samples=n_samples,
+            confidence=confidence,
         )
         all_means.append(mean)
         all_stds.append(std)
@@ -150,7 +153,9 @@ def evaluate_mc_gru(
         all_uppers.append(upper)
         all_actuals.append(y_batch.numpy())
 
-    concat = lambda lst: np.concatenate(lst).ravel()
+    def concat(lst):
+        return np.concatenate(lst).ravel()
+
     actuals = concat(all_actuals)
     means = concat(all_means)
     stds = concat(all_stds)
@@ -168,9 +173,13 @@ def evaluate_mc_gru(
 
     point_metrics = compute_all_metrics(actuals_inv, means_inv)
     cal = calibration_score(actuals_inv, lowers_inv, uppers_inv, nominal_coverage=confidence)
+    # Exact (not interval-approximated) CRPS: MC Dropout gives us a real
+    # (mean, std) per prediction from the sampled forward passes.
+    crps = crps_gaussian(actuals_inv, means_inv, stds_inv)
 
     logger.info("MC Dropout GRU  → point: %s", point_metrics)
     logger.info("MC Dropout GRU  → calibration: %s", cal)
+    logger.info("MC Dropout GRU  → CRPS: %.4f", crps)
 
     return {
         "actuals": actuals_inv,
@@ -180,4 +189,5 @@ def evaluate_mc_gru(
         "upper": uppers_inv,
         "point_metrics": point_metrics,
         "calibration": cal,
+        "crps": crps,
     }

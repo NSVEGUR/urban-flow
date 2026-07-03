@@ -10,22 +10,17 @@ learnable variable selection, and interpretable attention.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
 
-from  app.config import (
-    ALL_FEATURES,
+from app.config import (
     BATCH_SIZE,
     DATETIME_COL,
-    DEVICE,
     EPOCHS,
     FORECAST_HORIZON,
     JUNCTION_COL,
-    JUNCTION_IDS,
     MODELS_DIR,
     PATIENCE,
     SEQ_LEN,
@@ -36,7 +31,7 @@ from  app.config import (
     TFT_LEARNING_RATE,
     TFT_QUANTILES,
 )
-from  app.evaluation import compute_all_metrics
+from app.evaluation import compute_all_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +39,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 # Data Preparation for pytorch-forecasting
 # ──────────────────────────────────────────────
+
 
 def prepare_tft_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Prepare a DataFrame in the format required by ``pytorch-forecasting``.
@@ -83,20 +79,30 @@ def build_tft_datasets(
     val_cutoff = int(max_time * 0.85)
 
     train_df = df[df["time_idx"] <= train_cutoff]
-    val_df = df[(df["time_idx"] > train_cutoff - max_encoder_length) & (df["time_idx"] <= val_cutoff)]
+    val_df = df[
+        (df["time_idx"] > train_cutoff - max_encoder_length) & (df["time_idx"] <= val_cutoff)
+    ]
     test_df = df[df["time_idx"] > val_cutoff - max_encoder_length]
 
     # Known time-varying features the model knows in the future
     time_varying_known = [
-        "hour_sin", "hour_cos", "dow_sin", "dow_cos",
-        "month_sin", "month_cos", "is_weekend",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        "month_sin",
+        "month_cos",
+        "is_weekend",
     ]
 
     # Observed features only available up to present
     time_varying_unknown = [
         TARGET_COL,
-        "lag_1", "lag_24", "lag_168",
-        "rolling_mean_24", "rolling_std_24",
+        "lag_1",
+        "lag_24",
+        "lag_168",
+        "rolling_mean_24",
+        "rolling_std_24",
     ]
 
     training = TimeSeriesDataSet(
@@ -115,21 +121,33 @@ def build_tft_datasets(
     )
 
     validation = TimeSeriesDataSet.from_dataset(
-        training, val_df, predict=True, stop_randomization=True,
+        training,
+        val_df,
+        predict=True,
+        stop_randomization=True,
     )
 
     testing = TimeSeriesDataSet.from_dataset(
-        training, test_df, predict=True, stop_randomization=True,
+        training,
+        test_df,
+        predict=True,
+        stop_randomization=True,
     )
 
     train_dl = training.to_dataloader(
-        train=True, batch_size=BATCH_SIZE, num_workers=9,
+        train=True,
+        batch_size=BATCH_SIZE,
+        num_workers=9,
     )
     val_dl = validation.to_dataloader(
-        train=False, batch_size=BATCH_SIZE, num_workers=9,
+        train=False,
+        batch_size=BATCH_SIZE,
+        num_workers=9,
     )
     test_dl = testing.to_dataloader(
-        train=False, batch_size=BATCH_SIZE, num_workers=9,
+        train=False,
+        batch_size=BATCH_SIZE,
+        num_workers=9,
     )
 
     return training, validation, testing, train_dl, val_dl, test_dl
@@ -138,6 +156,7 @@ def build_tft_datasets(
 # ──────────────────────────────────────────────
 # TFT Model
 # ──────────────────────────────────────────────
+
 
 def build_tft(training_dataset):
     """Instantiate a ``TemporalFusionTransformer`` from a training dataset."""
@@ -206,6 +225,7 @@ def train_tft(
     best_model_path = checkpoint_cb.best_model_path
     if best_model_path:
         from pytorch_forecasting import TemporalFusionTransformer
+
         model = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
         logger.info("Loaded best TFT checkpoint: %s", best_model_path)
 
@@ -215,6 +235,7 @@ def train_tft(
 # ──────────────────────────────────────────────
 # Evaluation & Interpretation
 # ──────────────────────────────────────────────
+
 
 def evaluate_tft(
     model,
@@ -228,7 +249,11 @@ def evaluate_tft(
 
     # predictions.output is (N, horizon, n_quantiles) or (N, horizon) for median
     # predictions.y is (N, horizon) tuple
-    actuals = predictions.y[0].cpu().numpy().ravel() if isinstance(predictions.y, tuple) else predictions.y.cpu().numpy().ravel()
+    actuals = (
+        predictions.y[0].cpu().numpy().ravel()
+        if isinstance(predictions.y, tuple)
+        else predictions.y.cpu().numpy().ravel()
+    )
 
     # Median is the middle quantile index
     if predictions.output.ndim == 3:
@@ -287,7 +312,9 @@ def get_quantile_predictions(
 
     Returns ``{quantile_value: predictions_array}``.
     """
-    raw_predictions = model.predict(test_dl, mode="prediction", return_x=False)
+    # mode="quantiles" keeps the quantile dimension; "prediction" would
+    # collapse QuantileLoss output to the median only (see quantile_tft.py).
+    raw_predictions = model.predict(test_dl, mode="quantiles", return_x=False)
 
     quantile_preds = {}
     if raw_predictions.ndim == 3:

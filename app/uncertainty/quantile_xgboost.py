@@ -8,7 +8,7 @@ trained with quantile loss objectives.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Tuple
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -19,7 +19,7 @@ from app.config import (
     CONFIDENCE_LEVEL,
     TARGET_COL,
 )
-from app.evaluation import calibration_score, compute_all_metrics
+from app.evaluation import calibration_score, compute_all_metrics, crps_from_interval
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class XGBoostQuantile:
         self.confidence_level = confidence_level
         self.alpha = (1 - confidence_level) / 2
         self.quantiles = [self.alpha, 0.5, 1 - self.alpha]
-        
+
         common_params = dict(
             n_estimators=n_estimators,
             max_depth=max_depth,
@@ -53,7 +53,7 @@ class XGBoostQuantile:
             colsample_bytree=0.8,
             early_stopping_rounds=30,
             verbosity=0,
-            objective='reg:quantileerror',
+            objective="reg:quantileerror",
             **kwargs,
         )
 
@@ -64,7 +64,7 @@ class XGBoostQuantile:
             # quantitative_alpha is the parameter for reg:quantileerror in standard XGBoost
             # but in the sklearn wrapper it's often passed via kwargs or set_params.
             # We will pass it in kwargs for safety.
-            params['quantile_alpha'] = q
+            params["quantile_alpha"] = q
             self.models[q] = XGBRegressor(**params)
 
     def fit(
@@ -75,7 +75,7 @@ class XGBoostQuantile:
     ) -> "XGBoostQuantile":
         feature_cols = feature_cols or ALL_FEATURES
         self.feature_cols = feature_cols
-        
+
         # Check if features exist
         missing = [c for c in feature_cols if c not in train_df.columns]
         if missing:
@@ -90,11 +90,12 @@ class XGBoostQuantile:
         for q, model in self.models.items():
             # logger.info("Training XGBoost Quantile: q=%.2f", q)
             model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 eval_set=[(X_val, y_val)],
                 verbose=False,
             )
-        
+
         return self
 
     def predict(self, df: pd.DataFrame) -> Dict[float, np.ndarray]:
@@ -115,18 +116,15 @@ class XGBoostQuantile:
     ) -> Dict:
         """Evaluate point forecast and uncertainty."""
         self.fit(train_df, val_df)
-        
+
         raw_preds = self.predict(test_df)
-        
+
         # Inverse transform
         preds_inv = {}
         for q, p in raw_preds.items():
             preds_inv[q] = pipeline.inverse_transform_target(p, junction_id)
-            
-        actual = pipeline.inverse_transform_target(
-            test_df[TARGET_COL].values,
-            junction_id
-        )
+
+        actual = pipeline.inverse_transform_target(test_df[TARGET_COL].values, junction_id)
 
         # Point metrics (Median)
         median_pred = preds_inv[0.5]
@@ -135,14 +133,19 @@ class XGBoostQuantile:
         # Calibration
         lower = preds_inv[self.quantiles[0]]
         upper = preds_inv[self.quantiles[-1]]
-        
-        cal = calibration_score(
-            actual, lower, upper, 
-            nominal_coverage=self.confidence_level
+
+        cal = calibration_score(actual, lower, upper, nominal_coverage=self.confidence_level)
+        crps = crps_from_interval(
+            actual, median_pred, lower, upper, confidence=self.confidence_level
         )
 
-        logger.info("  Junction %d [XGBoost Quantile] → Point: %s | Calibration: %s", 
-                    junction_id, point_metrics, cal)
+        logger.info(
+            "  Junction %d [XGBoost Quantile] → Point: %s | Calibration: %s | CRPS: %.4f",
+            junction_id,
+            point_metrics,
+            cal,
+            crps,
+        )
 
         return {
             "actuals": actual,
@@ -151,4 +154,5 @@ class XGBoostQuantile:
             "upper": upper,
             "point_metrics": point_metrics,
             "calibration": cal,
+            "crps": crps,
         }

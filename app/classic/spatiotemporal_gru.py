@@ -86,13 +86,13 @@ class SpatioTemporalGRU(nn.Module):
         (batch, horizon, n_junctions)
         """
         batch, seq_len, n_j, n_f = x.shape
-        x = x.view(batch, seq_len, n_j * n_f)   # flatten spatial + features
+        x = x.view(batch, seq_len, n_j * n_f)  # flatten spatial + features
 
-        out, _ = self.gru(x)                      # (batch, seq_len, hidden)
-        out = out[:, -1, :]                       # last step → (batch, hidden)
+        out, _ = self.gru(x)  # (batch, seq_len, hidden)
+        out = out[:, -1, :]  # last step → (batch, hidden)
         out = self.layer_norm(out)
         out = self.dropout(out)
-        out = self.fc(out)                        # (batch, horizon * n_junctions)
+        out = self.fc(out)  # (batch, horizon * n_junctions)
         out = out.view(batch, self.horizon, self.n_junctions)
         return out
 
@@ -100,6 +100,7 @@ class SpatioTemporalGRU(nn.Module):
 # ──────────────────────────────────────────────
 # Training Loop
 # ──────────────────────────────────────────────
+
 
 def train_spatiotemporal_gru(
     model: SpatioTemporalGRU,
@@ -120,8 +121,10 @@ def train_spatiotemporal_gru(
     criterion = nn.MSELoss()
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = OneCycleLR(
-        optimizer, max_lr=lr * 10,
-        steps_per_epoch=len(train_dl), epochs=epochs,
+        optimizer,
+        max_lr=lr * 10,
+        steps_per_epoch=len(train_dl),
+        epochs=epochs,
     )
 
     best_val_loss = float("inf")
@@ -130,7 +133,8 @@ def train_spatiotemporal_gru(
 
     logger.info(
         "Training SpatioTemporalGRU  |  params=%s  |  device=%s",
-        f"{count_parameters(model):,}", device,
+        f"{count_parameters(model):,}",
+        device,
     )
 
     for epoch in range(1, epochs + 1):
@@ -140,7 +144,7 @@ def train_spatiotemporal_gru(
         for X_batch, y_batch in train_dl:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
-            preds = model(X_batch)        # (batch, horizon, n_junctions)
+            preds = model(X_batch)  # (batch, horizon, n_junctions)
             loss = criterion(preds, y_batch)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -166,7 +170,10 @@ def train_spatiotemporal_gru(
         if epoch % 5 == 0 or epoch == 1:
             logger.info(
                 "  Epoch %3d/%d  │  train_loss=%.6f  val_loss=%.6f",
-                epoch, epochs, avg_train, avg_val,
+                epoch,
+                epochs,
+                avg_train,
+                avg_val,
             )
 
         # ── Early stopping ──
@@ -190,6 +197,7 @@ def train_spatiotemporal_gru(
 # Evaluation Helper
 # ──────────────────────────────────────────────
 
+
 def evaluate_spatiotemporal_gru(
     model: SpatioTemporalGRU,
     test_dl: DataLoader,
@@ -209,11 +217,11 @@ def evaluate_spatiotemporal_gru(
     with torch.no_grad():
         for X_batch, y_batch in test_dl:
             X_batch = X_batch.to(device)
-            preds = model(X_batch).cpu().numpy()   # (batch, horizon, n_j)
+            preds = model(X_batch).cpu().numpy()  # (batch, horizon, n_j)
             all_preds.append(preds)
             all_actuals.append(y_batch.numpy())
 
-    preds_all = np.concatenate(all_preds)       # (N, horizon, n_junctions)
+    preds_all = np.concatenate(all_preds)  # (N, horizon, n_junctions)
     actuals_all = np.concatenate(all_actuals)
 
     # Inverse transform per junction
@@ -224,11 +232,11 @@ def evaluate_spatiotemporal_gru(
         # Extract for this junction
         p = preds_all[:, :, j_idx].ravel()
         a = actuals_all[:, :, j_idx].ravel()
-        
+
         # Inverse transform
         p_inv = pipeline.inverse_transform_target(p, jid)
         a_inv = pipeline.inverse_transform_target(a, jid)
-        
+
         final_preds.append(p_inv)
         final_actuals.append(a_inv)
 
@@ -263,7 +271,7 @@ def evaluate_per_junction(
             all_preds.append(preds)
             all_actuals.append(y_batch.numpy())
 
-    preds_all = np.concatenate(all_preds)       # (N, horizon, n_junctions)
+    preds_all = np.concatenate(all_preds)  # (N, horizon, n_junctions)
     actuals_all = np.concatenate(all_actuals)
 
     results = {}

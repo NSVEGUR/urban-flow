@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 from statsmodels.tsa.seasonal import seasonal_decompose
@@ -35,8 +34,10 @@ from app.config import (
     JUNCTION_COL,
     JUNCTION_IDS,
     RAW_DATA_PATH,
-    EDA_RESULTS_DIR as RESULTS_DIR,
     TARGET_COL,
+)
+from app.config import (
+    EDA_RESULTS_DIR as RESULTS_DIR,
 )
 from app.utils import setup_logging
 from app.visualization import (
@@ -73,17 +74,22 @@ def run_stationarity_tests(df: pd.DataFrame) -> pd.DataFrame:
         p_value = adf_result[1]
         critical = adf_result[3]
         stationary = p_value < 0.05
-        results.append({
-            "Junction": jid,    
-            "ADF Statistic": round(float(adf_stat), 4),
-            "p-value": round(float(p_value), 6),
-            "Critical 1%": round(critical, 4), # type: ignore
-            "Critical 5%": round(critical, 4), # type: ignore
-            "Stationary": "Yes" if stationary else "No",
-        })
+        results.append(
+            {
+                "Junction": jid,
+                "ADF Statistic": round(float(adf_stat), 4),
+                "p-value": round(float(p_value), 6),
+                "Critical 1%": round(critical, 4),  # type: ignore
+                "Critical 5%": round(critical, 4),  # type: ignore
+                "Stationary": "Yes" if stationary else "No",
+            }
+        )
         logger.info(
             "  Junction %d  │  ADF=%.4f  p=%.6f  → %s",
-            jid, adf_stat, p_value, "Stationary" if stationary else "Non-Stationary",
+            jid,
+            adf_stat,
+            p_value,
+            "Stationary" if stationary else "Non-Stationary",
         )
 
     return pd.DataFrame(results)
@@ -99,10 +105,9 @@ def run_descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
 def plot_yearly_monthly_trends(df: pd.DataFrame) -> None:
     """Plot average traffic by month and year for each junction."""
     df = df.copy()
-    dt_series = df[DATETIME_COL]
     df["Year"] = df[DATETIME_COL].dt.year  # type: ignore
-    df["Month"] = df[DATETIME_COL].dt.month # type: ignore
-    df["Hour"] = df[DATETIME_COL].dt.hour # type: ignore
+    df["Month"] = df[DATETIME_COL].dt.month  # type: ignore
+    df["Hour"] = df[DATETIME_COL].dt.hour  # type: ignore
 
     # Monthly trend
     fig, axes = plt.subplots(1, 2, figsize=(16, 5))
@@ -110,8 +115,13 @@ def plot_yearly_monthly_trends(df: pd.DataFrame) -> None:
     monthly = df.groupby([JUNCTION_COL, "Month"])[TARGET_COL].mean().reset_index()
     for jid in JUNCTION_IDS:
         subset = monthly[monthly[JUNCTION_COL] == jid]
-        axes[0].plot(subset["Month"], subset[TARGET_COL],
-                     marker="o", color=COLOR_PALETTE[jid], label=f"J{jid}")
+        axes[0].plot(
+            subset["Month"],
+            subset[TARGET_COL],
+            marker="o",
+            color=COLOR_PALETTE[jid],
+            label=f"J{jid}",
+        )
     axes[0].set_title("Average Vehicles by Month")
     axes[0].set_xlabel("Month")
     axes[0].set_ylabel("Avg Vehicles")
@@ -122,8 +132,13 @@ def plot_yearly_monthly_trends(df: pd.DataFrame) -> None:
     hourly = df.groupby([JUNCTION_COL, "Hour"])[TARGET_COL].mean().reset_index()
     for jid in JUNCTION_IDS:
         subset = hourly[hourly[JUNCTION_COL] == jid]
-        axes[1].plot(subset["Hour"], subset[TARGET_COL],
-                     marker="o", color=COLOR_PALETTE[jid], label=f"J{jid}")
+        axes[1].plot(
+            subset["Hour"],
+            subset[TARGET_COL],
+            marker="o",
+            color=COLOR_PALETTE[jid],
+            label=f"J{jid}",
+        )
     axes[1].set_title("Average Vehicles by Hour of Day")
     axes[1].set_xlabel("Hour")
     axes[1].set_ylabel("Avg Vehicles")
@@ -139,7 +154,7 @@ def plot_yearly_monthly_trends(df: pd.DataFrame) -> None:
 def plot_day_of_week_trend(df: pd.DataFrame) -> None:
     """Box plot of traffic by day of week."""
     df = df.copy()
-    df["DayOfWeek"] = df[DATETIME_COL].dt.day_name() # type: ignore
+    df["DayOfWeek"] = df[DATETIME_COL].dt.day_name()  # type: ignore
     day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
@@ -147,8 +162,12 @@ def plot_day_of_week_trend(df: pd.DataFrame) -> None:
         ax = axes[idx // 2][idx % 2]
         subset = df[df[JUNCTION_COL] == jid]
         sns.boxplot(
-            data=subset, x="DayOfWeek", y=TARGET_COL,
-            order=day_order, color=COLOR_PALETTE[jid], ax=ax,
+            data=subset,
+            x="DayOfWeek",
+            y=TARGET_COL,
+            order=day_order,
+            color=COLOR_PALETTE[jid],
+            ax=ax,
         )
         ax.set_title(f"Junction {jid}")
         ax.set_xlabel("")
@@ -173,7 +192,8 @@ def run_seasonal_decomposition(df: pd.DataFrame) -> None:
 
         result = seasonal_decompose(series, model="additive", period=24)
         plot_seasonal_decomposition(
-            result, junction_id=jid,
+            result,
+            junction_id=jid,
             save_path=RESULTS_DIR / f"eda_seasonal_decomp_j{jid}.png",
         )
         logger.info("Saved seasonal decomposition for Junction %d", jid)
@@ -184,7 +204,9 @@ def run_acf_pacf(df: pd.DataFrame) -> None:
     for jid in JUNCTION_IDS:
         series = df[df[JUNCTION_COL] == jid][TARGET_COL].dropna()
         plot_acf_pacf(
-            series, junction_id=jid, lags=72,
+            series,
+            junction_id=jid,
+            lags=72,
             save_path=RESULTS_DIR / f"eda_acf_pacf_j{jid}.png",
         )
         logger.info("Saved ACF/PACF for Junction %d", jid)
@@ -202,13 +224,15 @@ def detect_outliers(df: pd.DataFrame) -> pd.DataFrame:
         upper = Q3 + 1.5 * IQR
         n_outliers = ((series < lower) | (series > upper)).sum()
         pct = n_outliers / len(series) * 100
-        outlier_counts.append({
-            "Junction": jid,
-            "Lower Bound": round(lower, 2),
-            "Upper Bound": round(upper, 2),
-            "Outliers": n_outliers,
-            "Outlier %": round(pct, 2),
-        })
+        outlier_counts.append(
+            {
+                "Junction": jid,
+                "Lower Bound": round(lower, 2),
+                "Upper Bound": round(upper, 2),
+                "Outliers": n_outliers,
+                "Outlier %": round(pct, 2),
+            }
+        )
         logger.info("  Junction %d: %d outliers (%.1f%%)", jid, n_outliers, pct)
 
     return pd.DataFrame(outlier_counts)
@@ -237,7 +261,8 @@ def main() -> None:
     # 3. Overview time series
     logger.info("─── Time Series Overview ───")
     plot_time_series_overview(
-        df, save_path=RESULTS_DIR / "eda_time_series_overview.png",
+        df,
+        save_path=RESULTS_DIR / "eda_time_series_overview.png",
     )
 
     # 4. Monthly & Hourly trends

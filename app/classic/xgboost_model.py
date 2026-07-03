@@ -54,7 +54,8 @@ class XGBoostBaseline:
         y_val = val_df[TARGET_COL].values
 
         self.model.fit(
-            X_train, y_train,
+            X_train,
+            y_train,
             eval_set=[(X_val, y_val)],
             verbose=False,
         )
@@ -75,10 +76,7 @@ class XGBoostBaseline:
         self.fit(train_df, val_df)
         preds = self.predict(test_df)
         preds = pipeline.inverse_transform_target(preds, junction_id)
-        actual = pipeline.inverse_transform_target(
-            test_df[TARGET_COL].values,
-            junction_id
-        )
+        actual = pipeline.inverse_transform_target(test_df[TARGET_COL].values, junction_id)
         metrics = compute_all_metrics(actual, preds)
         logger.info("  Junction %d [XGBoost] → %s", junction_id, metrics)
         return preds, metrics

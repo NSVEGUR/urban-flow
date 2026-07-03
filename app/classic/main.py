@@ -23,20 +23,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from  app.config import ALL_FEATURES, DEVICE, CLASSIC_SEQ_LEN, JUNCTION_IDS, CLASSIC_RESULTS_DIR as RESULTS_DIR, MODELS_DIR
-from  app.data_pipeline import TrafficDataPipeline
-from  app.evaluation import build_comparison_table, print_comparison
-from  app.utils import seed_everything, setup_logging, timer
-from  app.visualization import plot_comparison_bar, plot_forecast
-from  app.classic.baselines import ARIMABaseline, NaiveSeasonalBaseline
-from  app.classic.xgboost_model import XGBoostBaseline
-from  app.classic.univariate_gru import UniGRU, evaluate_uni_gru, train_uni_gru
-from  app.classic.spatiotemporal_gru import (
+from app.classic.baselines import ARIMABaseline, NaiveSeasonalBaseline
+from app.classic.spatiotemporal_gru import (
     SpatioTemporalGRU,
     evaluate_per_junction,
     evaluate_spatiotemporal_gru,
     train_spatiotemporal_gru,
 )
+from app.classic.univariate_gru import UniGRU, evaluate_uni_gru, train_uni_gru
+from app.classic.xgboost_model import XGBoostBaseline
+from app.config import ALL_FEATURES, CLASSIC_SEQ_LEN, DEVICE, JUNCTION_IDS, MODELS_DIR
+from app.config import CLASSIC_RESULTS_DIR as RESULTS_DIR
+from app.data_pipeline import TrafficDataPipeline
+from app.evaluation import build_comparison_table, print_comparison
+from app.utils import seed_everything, setup_logging, timer
+from app.visualization import plot_forecast
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,8 @@ def run_baselines(pipeline: TrafficDataPipeline) -> dict:
 
             # Save forecast plot
             plot_forecast(
-                naive_preds[:200], test_arr[:200],
+                naive_preds[:200],
+                test_arr[:200],
                 title=f"Naive Seasonal Forecast – Junction {jid}",
                 save_path=RESULTS_DIR / f"forecast_naive_j{jid}.png",
             )
@@ -73,27 +75,34 @@ def run_baselines(pipeline: TrafficDataPipeline) -> dict:
                 jresults["ARIMA"] = arima_metrics
                 # Save forecast plot
                 plot_forecast(
-                    arima_preds[:200], test_arr[:200],
+                    arima_preds[:200],
+                    test_arr[:200],
                     title=f"ARIMA Forecast – Junction {jid}",
                     save_path=RESULTS_DIR / f"forecast_arima_j{jid}.png",
                 )
             except Exception as e:
                 logger.warning("ARIMA failed for Junction %d: %s", jid, e)
-                jresults["ARIMA"] = {"RMSE": float("nan"), "MAE": float("nan"), "MAPE": float("nan")}
+                jresults["ARIMA"] = {
+                    "RMSE": float("nan"),
+                    "MAE": float("nan"),
+                    "MAPE": float("nan"),
+                }
 
         # XGBoost
         with timer(f"XGBoost – J{jid}"):
             xgb = XGBoostBaseline()
-            xgb_preds, xgb_metrics = xgb.evaluate(train_df, val_df, test_df, pipeline=pipeline, junction_id=jid)
+            xgb_preds, xgb_metrics = xgb.evaluate(
+                train_df, val_df, test_df, pipeline=pipeline, junction_id=jid
+            )
             jresults["XGBoost"] = xgb_metrics
 
             # Save forecast plot
             plot_forecast(
-                xgb_preds[:200], test_arr[:200],
+                xgb_preds[:200],
+                test_arr[:200],
                 title=f"XGBoost Forecast – Junction {jid}",
                 save_path=RESULTS_DIR / f"forecast_xgb_j{jid}.png",
             )
-
 
         all_results[jid] = jresults
 
@@ -115,21 +124,25 @@ def run_univariate_gru(pipeline: TrafficDataPipeline, train_model: bool = True) 
 
         if train_model or not ckpt_path.exists():
             with timer(f"UniGRU Train – J{jid}"):
-                history = train_uni_gru(
-                    model, train_dl, val_dl,
+                train_uni_gru(
+                    model,
+                    train_dl,
+                    val_dl,
                     checkpoint_name=f"uni_gru_j{jid}",
                 )
         else:
             logger.info("Loading UniGRU checkpoint for Junction %d", jid)
             model.load_state_dict(torch.load(ckpt_path, map_location=DEVICE))
 
-
-        actuals, preds, metrics = evaluate_uni_gru(model, test_dl, pipeline=pipeline, junction_id=jid)
+        actuals, preds, metrics = evaluate_uni_gru(
+            model, test_dl, pipeline=pipeline, junction_id=jid
+        )
         all_results[jid] = metrics
 
         # Save forecast plot
         plot_forecast(
-            actuals[:200], preds[:200],
+            actuals[:200],
+            preds[:200],
             title=f"UniGRU Forecast – Junction {jid}",
             save_path=RESULTS_DIR / f"forecast_uni_gru_j{jid}.png",
         )
@@ -152,14 +165,15 @@ def run_spatiotemporal_gru(pipeline: TrafficDataPipeline, train_model: bool = Tr
 
     if train_model or not ckpt_path.exists():
         with timer("SpatioTemporalGRU Train"):
-            history = train_spatiotemporal_gru(
-                model, train_dl, val_dl,
+            train_spatiotemporal_gru(
+                model,
+                train_dl,
+                val_dl,
                 checkpoint_name="spatiotemporal_gru",
             )
     else:
         logger.info("Loading SpatioTemporalGRU checkpoint")
         model.load_state_dict(torch.load(ckpt_path, map_location=DEVICE))
-
 
     # Aggregate metrics
     actuals, preds, agg_metrics = evaluate_spatiotemporal_gru(
@@ -171,7 +185,8 @@ def run_spatiotemporal_gru(pipeline: TrafficDataPipeline, train_model: bool = Tr
 
     # Save forecast plot
     plot_forecast(
-        actuals[:200], preds[:200],
+        actuals[:200],
+        preds[:200],
         title="SpatioTemporalGRU Forecast – All Junctions (Median)",
         save_path=RESULTS_DIR / "forecast_spatiotemporal_gru.png",
     )
@@ -179,7 +194,13 @@ def run_spatiotemporal_gru(pipeline: TrafficDataPipeline, train_model: bool = Tr
     return {"aggregate": agg_metrics, "per_junction": per_j}
 
 
-def main(run_baseline: bool = True, run_uni_gru: bool = True, run_st_gru: bool = True, train_uni_gru_model: bool = True, train_st_gru_model: bool = True) -> None:
+def main(
+    run_baseline: bool = True,
+    run_uni_gru: bool = True,
+    run_st_gru: bool = True,
+    train_uni_gru_model: bool = True,
+    train_st_gru_model: bool = True,
+) -> None:
     setup_logging()
     seed_everything(42)
 
@@ -194,7 +215,6 @@ def main(run_baseline: bool = True, run_uni_gru: bool = True, run_st_gru: bool =
         logger.info("║       BASELINE MODELS           ║")
         logger.info("╚══════════════════════════════════╝\n")
         baseline_results = run_baselines(pipeline)
-
 
     # ── UniGRU ──
     uni_gru_results = {}
@@ -213,7 +233,9 @@ def main(run_baseline: bool = True, run_uni_gru: bool = True, run_st_gru: bool =
         st_results = run_spatiotemporal_gru(pipeline, train_model=train_st_gru_model)
 
     if not (run_baseline or run_uni_gru or run_st_gru):
-        logger.warning("No models were run. Please set at least one of run_baseline, run_uni_gru, or run_st_gru to True.")
+        logger.warning(
+            "No models were run. Please set at least one of run_baseline, run_uni_gru, or run_st_gru to True."
+        )
         return
 
     # ── Summary Table ──
@@ -276,5 +298,5 @@ if __name__ == "__main__":
         run_uni_gru=False,
         run_st_gru=True,
         train_uni_gru_model=False,
-        train_st_gru_model=True
-    ) 
+        train_st_gru_model=True,
+    )

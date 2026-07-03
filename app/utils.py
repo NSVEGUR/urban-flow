@@ -4,10 +4,10 @@ UrbanFlow – Utilities
 Reproducibility, timing, and logging helpers.
 """
 
+import logging
 import os
 import random
 import time
-import logging
 from contextlib import contextmanager
 
 import numpy as np

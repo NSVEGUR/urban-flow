@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.DS_Store
+lightning_logs/
+app/results
+app/models
+deploy
+basic
+.claude

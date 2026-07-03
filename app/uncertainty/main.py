@@ -16,29 +16,27 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from  app.config import (
+from app.config import (
     ALL_FEATURES,
-    CONFIDENCE_LEVEL,
     DEVICE,
     JUNCTION_IDS,
     MC_SAMPLES,
-    UNCERTAINTY_RESULTS_DIR as RESULTS_DIR,
     MODELS_DIR,
-    TFT_QUANTILES,
 )
-from  app.data_pipeline import TrafficDataPipeline, load_and_engineer_features
-from  app.evaluation import build_comparison_table, print_comparison
-from  app.utils import seed_everything, setup_logging, timer
-from  app.visualization import plot_fan_chart, plot_forecast
-
-from  app.uncertainty.mc_dropout_gru import MCDropoutGRU, evaluate_mc_gru, train_mc_gru
+from app.config import (
+    UNCERTAINTY_RESULTS_DIR as RESULTS_DIR,
+)
+from app.data_pipeline import TrafficDataPipeline, load_and_engineer_features
+from app.evaluation import build_comparison_table, print_comparison
+from app.uncertainty.mc_dropout_gru import MCDropoutGRU, evaluate_mc_gru, train_mc_gru
+from app.utils import seed_everything, setup_logging, timer
+from app.visualization import plot_fan_chart, plot_forecast
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +56,10 @@ def run_mc_dropout(pipeline: TrafficDataPipeline, train_model: bool = True) -> d
 
         if train_model or not ckpt_path.exists():
             with timer(f"MC Dropout Train – J{jid}"):
-                history = train_mc_gru(
-                    model, train_dl, val_dl,
+                train_mc_gru(
+                    model,
+                    train_dl,
+                    val_dl,
                     checkpoint_name=f"mc_dropout_gru_j{jid}",
                 )
         else:
@@ -91,7 +91,8 @@ def run_quantile_tft(pipeline: TrafficDataPipeline) -> dict:
     logger.info("═══ Quantile TFT Evaluation ═══")
 
     # Check for saved TFT checkpoint
-    from  app.config import MODELS_DIR
+    from app.config import MODELS_DIR
+
     tft_checkpoints = list(MODELS_DIR.glob("tft-*.ckpt"))
 
     if not tft_checkpoints:
@@ -103,8 +104,9 @@ def run_quantile_tft(pipeline: TrafficDataPipeline) -> dict:
 
     try:
         from pytorch_forecasting import TemporalFusionTransformer
-        from  app.sota.tft_model import build_tft_datasets, prepare_tft_dataframe
-        from  app.uncertainty.quantile_tft import evaluate_quantile_tft
+
+        from app.sota.tft_model import build_tft_datasets, prepare_tft_dataframe
+        from app.uncertainty.quantile_tft import evaluate_quantile_tft
 
         df = load_and_engineer_features(save=False)
         tft_df = prepare_tft_dataframe(df)
@@ -144,15 +146,19 @@ def run_quantile_xgboost(pipeline: TrafficDataPipeline) -> dict:
     for jid in JUNCTION_IDS:
         logger.info("═══ XGBoost Quantile – Junction %d ═══", jid)
         train_df, val_df, test_df = pipeline.get_junction_dataframes(jid)
-        
+
         xgb_q = XGBoostQuantile()
         metrics = xgb_q.evaluate(train_df, val_df, test_df, pipeline, jid)
         all_results[jid] = metrics
-        
+
         # Save Fan Chart
         plot_fan_chart(
-            metrics["actuals"][:200], metrics["median"][:200],
-            {xgb_q.quantiles[0]: metrics["lower"][:200], xgb_q.quantiles[-1]: metrics["upper"][:200]},
+            metrics["actuals"][:200],
+            metrics["median"][:200],
+            {
+                xgb_q.quantiles[0]: metrics["lower"][:200],
+                xgb_q.quantiles[-1]: metrics["upper"][:200],
+            },
             title=f"XGBoost Quantile Forecast – Junction {jid}",
             save_path=RESULTS_DIR / f"fan_chart_xgb_j{jid}.png",
         )
@@ -195,29 +201,29 @@ def main(train_mc_dropout: bool = True) -> None:
     # XGBoost Quantile
     if xgb_results:
         xgb_point = {}
-        xgb_cal = {}
         for metric in ["RMSE", "MAE", "MAPE"]:
-            xgb_point[metric] = float(np.mean([
-                xgb_results[jid]["point_metrics"][metric] for jid in xgb_results
-            ]))
+            xgb_point[metric] = float(
+                np.mean([xgb_results[jid]["point_metrics"][metric] for jid in xgb_results])
+            )
         xgb_cal_vals = {
             key: float(np.mean([xgb_results[jid]["calibration"][key] for jid in xgb_results]))
             for key in ["empirical_coverage", "interval_width", "miscalibration"]
         }
+        xgb_cal_vals["CRPS"] = float(np.mean([xgb_results[jid]["crps"] for jid in xgb_results]))
         summary["XGBoost Quantile"] = {**xgb_point, **xgb_cal_vals}
 
     # MC Dropout – average across junctions
     if mc_results:
         mc_point = {}
-        mc_cal = {}
         for metric in ["RMSE", "MAE", "MAPE"]:
-            mc_point[metric] = float(np.mean([
-                mc_results[jid]["point_metrics"][metric] for jid in mc_results
-            ]))
+            mc_point[metric] = float(
+                np.mean([mc_results[jid]["point_metrics"][metric] for jid in mc_results])
+            )
         mc_cal_vals = {
             key: float(np.mean([mc_results[jid]["calibration"][key] for jid in mc_results]))
             for key in ["empirical_coverage", "interval_width", "miscalibration"]
         }
+        mc_cal_vals["CRPS"] = float(np.mean([mc_results[jid]["crps"] for jid in mc_results]))
         summary["MC Dropout GRU"] = {**mc_point, **mc_cal_vals}
 
     # Quantile TFT
@@ -225,6 +231,7 @@ def main(train_mc_dropout: bool = True) -> None:
         summary["Quantile TFT"] = {
             **tft_results["point_metrics"],
             **tft_results["calibration"],
+            "CRPS": tft_results["crps"],
         }
 
     if summary:

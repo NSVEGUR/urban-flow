@@ -6,15 +6,15 @@ RMSE, MAE, MAPE, CRPS, calibration score, and comparison table builder.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict
 
 import numpy as np
 import pandas as pd
 
-
 # ──────────────────────────────────────────────
 # Point-Forecast Metrics
 # ──────────────────────────────────────────────
+
 
 def rmse(actual: np.ndarray, predicted: np.ndarray) -> float:
     """Root Mean Squared Error."""
@@ -31,9 +31,7 @@ def mape(actual: np.ndarray, predicted: np.ndarray, eps: float = 1e-8) -> float:
     return float(np.mean(np.abs((actual - predicted) / (actual + eps))) * 100)
 
 
-def compute_all_metrics(
-    actual: np.ndarray, predicted: np.ndarray
-) -> Dict[str, float]:
+def compute_all_metrics(actual: np.ndarray, predicted: np.ndarray) -> Dict[str, float]:
     """Return a dict with RMSE, MAE, and MAPE."""
     return {
         "RMSE": rmse(actual, predicted),
@@ -46,9 +44,8 @@ def compute_all_metrics(
 # Probabilistic Metrics
 # ──────────────────────────────────────────────
 
-def crps_gaussian(
-    actual: np.ndarray, mu: np.ndarray, sigma: np.ndarray
-) -> float:
+
+def crps_gaussian(actual: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> float:
     """Continuous Ranked Probability Score assuming Gaussian predictive dist.
 
     Uses the closed-form solution:
@@ -59,14 +56,37 @@ def crps_gaussian(
     """
     try:
         from properscoring import crps_gaussian as _crps
+
         return float(np.mean(_crps(actual, mu, sigma)))
     except ImportError:
         from scipy.stats import norm
+
         z = (actual - mu) / (sigma + 1e-8)
-        score = sigma * (
-            z * norm.cdf(z) + norm.pdf(z) - 1.0 / np.sqrt(np.pi)
-        )
+        score = sigma * (z * norm.cdf(z) + norm.pdf(z) - 1.0 / np.sqrt(np.pi))
         return float(np.mean(score))
+
+
+def crps_from_interval(
+    actual: np.ndarray,
+    median: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    confidence: float = 0.90,
+) -> float:
+    """Approximate CRPS for a quantile forecast lacking a full predictive
+    distribution (e.g. XGBoost Quantile, Quantile TFT).
+
+    Fits a Gaussian whose (lower, upper) interval matches the given
+    confidence level, centered on the median — an approximation, since
+    quantile-based intervals need not be symmetric or Gaussian-shaped. Prefer
+    ``crps_gaussian`` directly when a real (mu, sigma) is available, as it is
+    for MC Dropout.
+    """
+    from scipy.stats import norm
+
+    z = norm.ppf(1 - (1 - confidence) / 2)
+    sigma = np.clip((upper - lower) / (2 * z), 1e-6, None)
+    return crps_gaussian(actual, median, sigma)
 
 
 def calibration_score(
@@ -97,6 +117,7 @@ def calibration_score(
 # ──────────────────────────────────────────────
 # Comparison Table
 # ──────────────────────────────────────────────
+
 
 def build_comparison_table(
     results: Dict[str, Dict[str, float]],

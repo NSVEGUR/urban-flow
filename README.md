@@ -1,8 +1,13 @@
 # UrbanFlow: Spatio-Temporal Probabilistic Traffic Forecasting
 
+[![Live Demo](https://img.shields.io/badge/demo-Hugging%20Face%20Spaces-blue)](https://huggingface.co/spaces/nsvegur/urban-flow-demo)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## Overview
 
 UrbanFlow is a **comprehensive traffic forecasting system** for urban junctions. It combines **statistical baselines, deep learning, and attention-based temporal models** to provide **accurate and probabilistic predictions**, capturing both temporal and spatial patterns in traffic flows.
+
+The project started in 2023 as a university course project ([`basic/`](basic/), see below) and was rewritten from scratch in 2026 into a modular, spatio-temporal, uncertainty-aware forecasting system while studying Probabilistic Machine Learning at TU Hamburg. Forecasting congestion at road junctions and forecasting demand/throughput in a logistics network are the same underlying problem — time-indexed, spatially-correlated flow with quantifiable uncertainty — which is what motivated the extension.
 
 **Highlights:**
 
@@ -11,6 +16,14 @@ UrbanFlow is a **comprehensive traffic forecasting system** for urban junctions.
 - **Temporal Fusion Transformer (TFT)** for SOTA results with attention insights.
 - MC Dropout & quantile regression for uncertainty quantification.
 - Modular, production-quality Python codebase.
+
+---
+
+## Live Demo
+
+Pick a junction and forecast horizon and see a point forecast with a calibrated uncertainty band, served from the trained XGBoost Quantile model:
+
+**[Try it on Hugging Face Spaces →](https://huggingface.co/spaces/nsvegur/urban-flow-demo)**
 
 ---
 
@@ -67,8 +80,8 @@ graph TB
 ## Project Structure
 
 ```
-traffic-analyzer/
-├── basic/                          # Primary Report Work before extensions and comparisons
+urban-flow/
+├── basic/                          # 2023 university course project (original TF/Keras script + reports) — kept as the origin story, superseded by app/
 ├── data/
 │   ├── traffic.csv                 # Raw data
 │   └── traffic_augmented.csv       # Feature-engineered
@@ -137,13 +150,19 @@ _Note: XGBoost outperforms deep learning baselines in this configuration, highli
 
 ### Uncertainty Quantification
 
-| Model                | RMSE   | MAE    | Coverage (90%) | Width |
-| -------------------- | ------ | ------ | -------------- | ----- |
-| **XGBoost Quantile** | 5.9705 | 3.9882 | 0.65           | 8.58  |
-| **MC Dropout GRU**   | 7.2858 | 5.1803 | 0.48           | 8.16  |
-| **Quantile TFT**     | 10.004 | 7.9902 | 0.00           | 0.00  |
+| Model                 | RMSE   | MAE    | Coverage (90%) | Width | CRPS   |
+| --------------------- | ------ | ------ | -------------- | ----- | ------ |
+| **XGBoost Quantile** | 5.9705 | 3.9882 | 0.65           | 8.58  | 3.2275 |
+| **MC Dropout GRU**   | 7.2865 | 5.1791 | 0.48           | 8.16  | 4.1607 |
+| **Quantile TFT**     | 10.004 | 7.9902 | 0.39           | 10.59 | 6.4770 |
 
-> _Note: TFT uncertainty requires further calibration. XGBoost currently provides the most reliable intervals._
+_CRPS (Continuous Ranked Probability Score) rewards both accuracy and sharpness of the full predictive distribution — lower is better. XGBoost Quantile wins on every probabilistic metric here, not just point accuracy. MC Dropout's CRPS is computed exactly from its sampled (mean, std); XGBoost/TFT's is approximated by fitting a Gaussian to their prediction interval (see [`crps_from_interval`](app/evaluation.py))._
+
+> _Note: all three methods under-cover the nominal 90% interval (XGBoost Quantile is closest, at 65%). Quantile TFT's coverage was previously reported as 0.00 due to a `mode="prediction"` vs. `mode="quantiles"` bug in `pytorch-forecasting`'s `predict()` call, which silently collapsed all quantiles to the median (see [`app/uncertainty/quantile_tft.py`](app/uncertainty/quantile_tft.py)) — fixed, and now genuinely under-calibrated rather than broken.
+
+<img src="app/results/uncertainty/calibration_reliability_diagram.png" alt="Calibration reliability diagram" width="480">
+
+_Reliability diagram across 5 nominal confidence levels ([`app/uncertainty/calibration_analysis.py`](app/uncertainty/calibration_analysis.py)): all three methods sit below the diagonal (under-confident) at every level, with XGBoost Quantile consistently closest to perfect calibration — a systematic finding, not an artifact of the single 90% headline number above._
 
 **Key Insights:**
 
@@ -164,5 +183,14 @@ _Note: XGBoost outperforms deep learning baselines in this configuration, highli
 - **pmdarima** – Auto-ARIMA
 - **XGBoost** – Gradient boosting baseline
 - **matplotlib / seaborn** – Publication-quality visualizations
+- **Streamlit** – Interactive demo
+- **pytest / ruff / GitHub Actions** – Tests, linting, CI
+- **Docker** – Reproducible pipeline execution
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ---

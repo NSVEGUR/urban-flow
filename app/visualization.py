@@ -10,25 +10,27 @@ figure is saved to disk and ``plt.close()`` is called to free memory.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence
 
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from app.config import COLOR_PALETTE, FIGURE_DPI, JUNCTION_IDS, RESULTS_DIR
+from app.config import COLOR_PALETTE, FIGURE_DPI, JUNCTION_IDS
 
 # ── Global style ──
 sns.set_theme(style="whitegrid", palette="muted", font_scale=1.1)
-plt.rcParams.update({
-    "figure.dpi": FIGURE_DPI,
-    "savefig.dpi": FIGURE_DPI,
-    "axes.titlesize": 14,
-    "axes.labelsize": 12,
-    "figure.figsize": (14, 5),
-})
+plt.rcParams.update(
+    {
+        "figure.dpi": FIGURE_DPI,
+        "savefig.dpi": FIGURE_DPI,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "figure.figsize": (14, 5),
+    }
+)
 
 
 def _save_or_show(fig: plt.Figure, save_path: Optional[str | Path]) -> None:
@@ -44,6 +46,7 @@ def _save_or_show(fig: plt.Figure, save_path: Optional[str | Path]) -> None:
 # ──────────────────────────────────────────────
 # EDA Plots
 # ──────────────────────────────────────────────
+
 
 def plot_time_series_overview(
     df: pd.DataFrame,
@@ -133,15 +136,18 @@ def plot_cross_correlation(
     save_path: Optional[str | Path] = None,
 ) -> None:
     """Heatmap of cross-correlation between junctions."""
-    pivoted = df.pivot_table(
-        index="DateTime", columns="Junction", values="Vehicles"
-    )
+    pivoted = df.pivot_table(index="DateTime", columns="Junction", values="Vehicles")
     corr = pivoted.corr()
 
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(
-        corr, annot=True, fmt=".3f", cmap="Blues",
-        square=True, linewidths=0.5, ax=ax,
+        corr,
+        annot=True,
+        fmt=".3f",
+        cmap="Blues",
+        square=True,
+        linewidths=0.5,
+        ax=ax,
     )
     ax.set_title("Cross-Correlation Between Junctions")
     _save_or_show(fig, save_path)
@@ -150,6 +156,7 @@ def plot_cross_correlation(
 # ──────────────────────────────────────────────
 # Forecast Plots
 # ──────────────────────────────────────────────
+
 
 def plot_forecast(
     actual: np.ndarray,
@@ -169,8 +176,12 @@ def plot_forecast(
 
     if lower is not None and upper is not None:
         ax.fill_between(
-            x, lower, upper,
-            color="#E74C3C", alpha=0.15, label="90% CI",
+            x,
+            lower,
+            upper,
+            color="#E74C3C",
+            alpha=0.15,
+            label="90% CI",
         )
 
     ax.set_title(title)
@@ -207,9 +218,12 @@ def plot_fan_chart(
     for (lo_q, hi_q), alpha in zip(pairs, alphas):
         if lo_q in quantiles and hi_q in quantiles:
             ax.fill_between(
-                x, quantiles[lo_q], quantiles[hi_q],
-                color="#E74C3C", alpha=alpha,
-                label=f"{int(lo_q*100)}–{int(hi_q*100)}%",
+                x,
+                quantiles[lo_q],
+                quantiles[hi_q],
+                color="#E74C3C",
+                alpha=alpha,
+                label=f"{int(lo_q * 100)}–{int(hi_q * 100)}%",
             )
 
     ax.set_title(title)
@@ -221,8 +235,59 @@ def plot_fan_chart(
 
 
 # ──────────────────────────────────────────────
+# Calibration / Reliability Diagram
+# ──────────────────────────────────────────────
+
+
+def plot_calibration_diagram(
+    reliability: Dict[str, tuple[Sequence[float], Sequence[float]]],
+    title: str = "Calibration — Nominal vs. Empirical Coverage",
+    save_path: Optional[str | Path] = None,
+) -> None:
+    """Reliability diagram for prediction-interval calibration.
+
+    Parameters
+    ----------
+    reliability : dict
+        ``{model_name: (nominal_levels, empirical_coverages)}``. A perfectly
+        calibrated model lies on the y = x diagonal; points below the
+        diagonal indicate under-coverage (intervals too narrow).
+    """
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.plot(
+        [0, 1], [0, 1], color="#888888", linestyle="--", linewidth=1, label="Perfect calibration"
+    )
+
+    markers = ["o", "s", "^", "D"]
+    colors = [COLOR_PALETTE[jid] for jid in JUNCTION_IDS]
+    for (model_name, (nominal, empirical)), marker, color in zip(
+        reliability.items(), markers, colors
+    ):
+        ax.plot(
+            nominal,
+            empirical,
+            marker=marker,
+            color=color,
+            linewidth=1.5,
+            markersize=7,
+            label=model_name,
+        )
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("Nominal coverage")
+    ax.set_ylabel("Empirical coverage")
+    ax.set_title(title)
+    ax.legend(loc="upper left")
+    ax.set_aspect("equal")
+    fig.tight_layout()
+    _save_or_show(fig, save_path)
+
+
+# ──────────────────────────────────────────────
 # Comparison Bar Chart
 # ──────────────────────────────────────────────
+
 
 def plot_comparison_bar(
     table: pd.DataFrame,
@@ -247,7 +312,8 @@ def plot_comparison_bar(
             bar.get_width() + 0.01 * max(values),
             bar.get_y() + bar.get_height() / 2,
             f"{val:.2f}",
-            va="center", fontsize=10,
+            va="center",
+            fontsize=10,
         )
 
     fig.tight_layout()
@@ -257,6 +323,7 @@ def plot_comparison_bar(
 # ──────────────────────────────────────────────
 # Attention Heatmap (for TFT)
 # ──────────────────────────────────────────────
+
 
 def plot_attention_heatmap(
     attention_weights: np.ndarray,
@@ -275,9 +342,11 @@ def plot_attention_heatmap(
 
     fig, ax = plt.subplots(figsize=(16, 3 * attention_weights.shape[0]))
     sns.heatmap(
-        attention_weights, cmap="YlOrRd", ax=ax,
+        attention_weights,
+        cmap="YlOrRd",
+        ax=ax,
         xticklabels=time_labels or False,
-        yticklabels=[f"Head {i+1}" for i in range(attention_weights.shape[0])],
+        yticklabels=[f"Head {i + 1}" for i in range(attention_weights.shape[0])],
     )
     ax.set_title(title)
     ax.set_xlabel("Time Step (lookback)")

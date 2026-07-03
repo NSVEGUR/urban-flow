@@ -20,7 +20,6 @@ from app.config import (
     ALL_FEATURES,
     AUGMENTED_DATA_PATH,
     BATCH_SIZE,
-    CYCLICAL_FEATURES,
     DATETIME_COL,
     FORECAST_HORIZON,
     JUNCTION_COL,
@@ -30,7 +29,6 @@ from app.config import (
     ROLLING_WINDOWS,
     SEQ_LEN,
     TARGET_COL,
-    TEST_RATIO,
     TRAIN_RATIO,
     VAL_RATIO,
 )
@@ -42,12 +40,13 @@ logger = logging.getLogger(__name__)
 # Feature Engineering
 # ──────────────────────────────────────────────
 
+
 def _add_cyclical_time_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add sine/cosine encoded time features (hour, day-of-week, month)."""
     dt = df[DATETIME_COL]
 
     # Hour of day  (period = 24)
-    df["hour_sin"] = np.sin(2 * np.pi * dt.dt.hour / 24) # type: ignore
+    df["hour_sin"] = np.sin(2 * np.pi * dt.dt.hour / 24)  # type: ignore
     df["hour_cos"] = np.cos(2 * np.pi * dt.dt.hour / 24)  # type: ignore
 
     # Day of week  (period = 7)
@@ -84,6 +83,27 @@ def _add_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _validate_raw_schema(df: pd.DataFrame) -> None:
+    """Fail fast with a clear error if the raw CSV doesn't match the expected
+    schema, instead of letting a KeyError/TypeError surface deep in feature
+    engineering or model training.
+    """
+    required = {DATETIME_COL, JUNCTION_COL, TARGET_COL}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"Raw data at {RAW_DATA_PATH} is missing required column(s): {sorted(missing)}"
+        )
+    if df.empty:
+        raise ValueError(f"Raw data at {RAW_DATA_PATH} is empty")
+    if not set(df[JUNCTION_COL].unique()).issuperset(set(JUNCTION_IDS)):
+        logger.warning(
+            "Raw data junctions %s do not cover configured JUNCTION_IDS %s",
+            sorted(df[JUNCTION_COL].unique()),
+            JUNCTION_IDS,
+        )
+
+
 def load_and_engineer_features(save: bool = True) -> pd.DataFrame:
     """Load raw CSV, apply feature engineering, optionally save augmented data.
 
@@ -95,6 +115,7 @@ def load_and_engineer_features(save: bool = True) -> pd.DataFrame:
     """
     logger.info("Loading raw data from %s", RAW_DATA_PATH)
     df = pd.read_csv(RAW_DATA_PATH)
+    _validate_raw_schema(df)
     df[DATETIME_COL] = pd.to_datetime(df[DATETIME_COL])
     df = df.drop(columns=["ID"], errors="ignore")
     df = df.sort_values([DATETIME_COL, JUNCTION_COL]).reset_index(drop=True)
@@ -118,6 +139,7 @@ def load_and_engineer_features(save: bool = True) -> pd.DataFrame:
 # Splitting
 # ──────────────────────────────────────────────
 
+
 def chronological_split(
     df: pd.DataFrame,
     junction_id: Optional[int] = None,
@@ -140,7 +162,10 @@ def chronological_split(
 
     logger.info(
         "Split (junction=%s): train=%d, val=%d, test=%d",
-        junction_id or "all", len(train), len(val), len(test),
+        junction_id or "all",
+        len(train),
+        len(val),
+        len(test),
     )
     return train, val, test
 
@@ -148,6 +173,7 @@ def chronological_split(
 # ──────────────────────────────────────────────
 # Scaling
 # ──────────────────────────────────────────────
+
 
 def fit_scalers(
     train_df: pd.DataFrame,
@@ -185,6 +211,7 @@ def scale_dataframe(
 # PyTorch Dataset
 # ──────────────────────────────────────────────
 
+
 class TrafficSequenceDataset(Dataset):
     """Sliding-window dataset that produces (X, y) sequences.
 
@@ -216,7 +243,7 @@ class TrafficSequenceDataset(Dataset):
         return len(self.data) - self.seq_len - self.horizon + 1
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        x = self.data[idx : idx + self.seq_len]                     # (seq_len, n_features)
+        x = self.data[idx : idx + self.seq_len]  # (seq_len, n_features)
         y = self.targets[idx + self.seq_len : idx + self.seq_len + self.horizon]  # (horizon,)
         return x, y
 
@@ -244,9 +271,7 @@ class SpatioTemporalDataset(Dataset):
     ):
         self.junctions = sorted(junction_data.keys())
         # Stack: (T, n_junctions, n_features) and (T, n_junctions)
-        self.data = torch.FloatTensor(
-            np.stack([junction_data[j] for j in self.junctions], axis=1)
-        )
+        self.data = torch.FloatTensor(np.stack([junction_data[j] for j in self.junctions], axis=1))
         self.targets = torch.FloatTensor(
             np.stack([junction_targets[j] for j in self.junctions], axis=1)
         )
@@ -257,14 +282,17 @@ class SpatioTemporalDataset(Dataset):
         return self.data.shape[0] - self.seq_len - self.horizon + 1
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        x = self.data[idx : idx + self.seq_len]                        # (seq_len, n_junctions, n_feat)
-        y = self.targets[idx + self.seq_len : idx + self.seq_len + self.horizon]  # (horizon, n_junctions)
+        x = self.data[idx : idx + self.seq_len]  # (seq_len, n_junctions, n_feat)
+        y = self.targets[
+            idx + self.seq_len : idx + self.seq_len + self.horizon
+        ]  # (horizon, n_junctions)
         return x, y
 
 
 # ──────────────────────────────────────────────
 # High-Level Pipeline
 # ──────────────────────────────────────────────
+
 
 class TrafficDataPipeline:
     """End-to-end pipeline: load → engineer → split → scale → DataLoaders.
@@ -317,9 +345,7 @@ class TrafficDataPipeline:
 
     # ── Per-junction loaders ──
 
-    def _make_loader(
-        self, df: pd.DataFrame, junction_id: int, shuffle: bool
-    ) -> DataLoader:
+    def _make_loader(self, df: pd.DataFrame, junction_id: int, shuffle: bool) -> DataLoader:
         features = df[self.feature_cols].values
         targets = df[TARGET_COL].values
         ds = TrafficSequenceDataset(features, np.array(targets), self.seq_len, self.horizon)
@@ -347,20 +373,14 @@ class TrafficDataPipeline:
             junction_data = {}
             junction_targets = {}
             # Find the minimum length across junctions for this split
-            min_len = min(
-                len(self.splits[jid][split_idx]) for jid in JUNCTION_IDS
-            )
+            min_len = min(len(self.splits[jid][split_idx]) for jid in JUNCTION_IDS)
             for jid in JUNCTION_IDS:
                 split_df = self.splits[jid][split_idx].iloc[:min_len]
                 junction_data[jid] = split_df[self.feature_cols].values
                 junction_targets[jid] = split_df[TARGET_COL].values
 
-            ds = SpatioTemporalDataset(
-                junction_data, junction_targets, self.seq_len, self.horizon
-            )
-            loaders.append(
-                DataLoader(ds, batch_size=self.batch_size, shuffle=shuffle)
-            )
+            ds = SpatioTemporalDataset(junction_data, junction_targets, self.seq_len, self.horizon)
+            loaders.append(DataLoader(ds, batch_size=self.batch_size, shuffle=shuffle))
 
         return tuple(loaders)  # type: ignore[return-value]
 
@@ -383,14 +403,13 @@ class TrafficDataPipeline:
         return tuple(arrays)  # type: ignore[return-value]
 
     def get_junction_dataframes(
-        self, junction_id: int,
+        self,
+        junction_id: int,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Return (train_df, val_df, test_df) for a junction (scaled)."""
         return self.splits[junction_id]
 
-    def inverse_transform_target(
-        self, values: np.ndarray, junction_id: int
-    ) -> np.ndarray:
+    def inverse_transform_target(self, values: np.ndarray, junction_id: int) -> np.ndarray:
         """Convert scaled target values back to original scale."""
         _, tgt_scaler = self.scalers[junction_id]
         return tgt_scaler.inverse_transform(values.reshape(-1, 1)).ravel()

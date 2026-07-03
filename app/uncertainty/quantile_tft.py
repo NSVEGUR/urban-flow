@@ -10,10 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
-import numpy as np
-
-from  app.config import CONFIDENCE_LEVEL, RESULTS_DIR, TFT_QUANTILES
-from  app.evaluation import calibration_score, compute_all_metrics
+from app.config import CONFIDENCE_LEVEL, TFT_QUANTILES
+from app.evaluation import calibration_score, compute_all_metrics, crps_from_interval
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,11 @@ def evaluate_quantile_tft(
     - point_metrics (RMSE, MAE, MAPE on median)
     - calibration (coverage, width, miscalibration)
     """
-    predictions = model.predict(test_dl, return_y=True, mode="prediction")
+    # mode="quantiles" is required (not "prediction") to keep the quantile
+    # dimension intact — "prediction" calls the loss's to_prediction(), which
+    # for QuantileLoss collapses the output to the median only, silently
+    # making lower == upper == median (0.00 coverage/width bug).
+    predictions = model.predict(test_dl, return_y=True, mode="quantiles")
 
     # Extract actuals
     if isinstance(predictions.y, tuple):
@@ -66,9 +68,14 @@ def evaluate_quantile_tft(
     # Metrics
     point_metrics = compute_all_metrics(actuals, median)
     cal = calibration_score(actuals, lower, upper, nominal_coverage=confidence)
+    # TFT_QUANTILES only has 0.1/0.9 as its outermost pair, so the true
+    # nominal coverage of (lower, upper) is (upper_q - lower_q), not
+    # necessarily the requested `confidence` — use the real bracket width.
+    crps = crps_from_interval(actuals, median, lower, upper, confidence=upper_q - lower_q)
 
     logger.info("Quantile TFT  → point: %s", point_metrics)
     logger.info("Quantile TFT  → calibration: %s", cal)
+    logger.info("Quantile TFT  → CRPS: %.4f", crps)
 
     return {
         "actuals": actuals,
@@ -78,4 +85,5 @@ def evaluate_quantile_tft(
         "quantile_preds": quantile_preds,
         "point_metrics": point_metrics,
         "calibration": cal,
+        "crps": crps,
     }

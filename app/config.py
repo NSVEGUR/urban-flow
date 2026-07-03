@@ -5,6 +5,7 @@ Central place for hyperparameters, paths, feature lists, and device setup.
 """
 
 from pathlib import Path
+
 import torch
 
 # ──────────────────────────────────────────────
@@ -39,20 +40,24 @@ JUNCTION_COL = "Junction"
 # ──────────────────────────────────────────────
 # Feature Engineering
 # ──────────────────────────────────────────────
-LAG_HOURS = [1, 24, 168]                # t-1, same hour yesterday, same hour last week
-ROLLING_WINDOWS = [24]                   # 24-hour rolling statistics
+LAG_HOURS = [1, 24, 168]  # t-1, same hour yesterday, same hour last week
+ROLLING_WINDOWS = [24]  # 24-hour rolling statistics
 CYCLICAL_FEATURES = ["hour", "day_of_week", "month"]
 
 # Columns produced by feature engineering (populated at runtime by data_pipeline)
 TIME_FEATURES = [
-    "hour_sin", "hour_cos",
-    "dow_sin", "dow_cos",
-    "month_sin", "month_cos",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "month_sin",
+    "month_cos",
     "is_weekend",
 ]
 LAG_FEATURES = [f"lag_{h}" for h in LAG_HOURS]
-ROLLING_FEATURES = [f"rolling_mean_{w}" for w in ROLLING_WINDOWS] + \
-                   [f"rolling_std_{w}" for w in ROLLING_WINDOWS]
+ROLLING_FEATURES = [f"rolling_mean_{w}" for w in ROLLING_WINDOWS] + [
+    f"rolling_std_{w}" for w in ROLLING_WINDOWS
+]
 
 ALL_FEATURES = TIME_FEATURES + LAG_FEATURES + ROLLING_FEATURES
 
@@ -61,12 +66,12 @@ ALL_FEATURES = TIME_FEATURES + LAG_FEATURES + ROLLING_FEATURES
 # ──────────────────────────────────────────────
 SEQ_LEN = 24  # Use past 24 hours to predict next 24 hours
 CLASSIC_SEQ_LEN = 168
-SOTA_SEQ_LEN = 168  
+SOTA_SEQ_LEN = 168
 
-FORECAST_HORIZON = 24   # Predict next 24 hours
+FORECAST_HORIZON = 24  # Predict next 24 hours
 BATCH_SIZE = 64
 EPOCHS = 100
-PATIENCE = 15           # Early-stopping patience
+PATIENCE = 15  # Early-stopping patience
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-5
 DROPOUT = 0.2
@@ -77,6 +82,12 @@ DROPOUT = 0.2
 TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15
 TEST_RATIO = 0.15
+
+if abs(TRAIN_RATIO + VAL_RATIO + TEST_RATIO - 1.0) > 1e-9:
+    raise ValueError(
+        f"TRAIN_RATIO + VAL_RATIO + TEST_RATIO must sum to 1.0, "
+        f"got {TRAIN_RATIO + VAL_RATIO + TEST_RATIO}"
+    )
 
 # ──────────────────────────────────────────────
 # GRU Architecture
@@ -96,9 +107,13 @@ TFT_QUANTILES = [0.1, 0.25, 0.5, 0.75, 0.9]
 # ──────────────────────────────────────────────
 # MC Dropout (Probabilistic)
 # ──────────────────────────────────────────────
-MC_SAMPLES = 100        # Number of forward passes for uncertainty
+MC_SAMPLES = 100  # Number of forward passes for uncertainty
 MC_DROPOUT = 0.4
-CONFIDENCE_LEVEL = 0.90 # 90% confidence intervals
+CONFIDENCE_LEVEL = 0.90  # 90% confidence intervals
+
+if not 0.0 < CONFIDENCE_LEVEL < 1.0:
+    raise ValueError(f"CONFIDENCE_LEVEL must be in (0, 1), got {CONFIDENCE_LEVEL}")
+
 
 # ──────────────────────────────────────────────
 # Device
@@ -110,6 +125,7 @@ def get_device() -> torch.device:
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
 
 DEVICE = get_device()
 

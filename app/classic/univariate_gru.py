@@ -8,7 +8,7 @@ AdamW optimizer, and OneCycleLR scheduler.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -83,17 +83,18 @@ class UniGRU(nn.Module):
         Tensor of shape (batch, horizon)
         """
         # GRU pass
-        out, _ = self.gru(x)            # (batch, seq_len, hidden)
-        out = out[:, -1, :]              # last time-step → (batch, hidden)
+        out, _ = self.gru(x)  # (batch, seq_len, hidden)
+        out = out[:, -1, :]  # last time-step → (batch, hidden)
         out = self.layer_norm(out)
         out = self.dropout(out)
-        out = self.fc(out)               # (batch, horizon)
+        out = self.fc(out)  # (batch, horizon)
         return out
 
 
 # ──────────────────────────────────────────────
 # Training Loop
 # ──────────────────────────────────────────────
+
 
 def train_uni_gru(
     model: UniGRU,
@@ -116,8 +117,10 @@ def train_uni_gru(
     criterion = nn.MSELoss()
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = OneCycleLR(
-        optimizer, max_lr=lr * 10,
-        steps_per_epoch=len(train_dl), epochs=epochs,
+        optimizer,
+        max_lr=lr * 10,
+        steps_per_epoch=len(train_dl),
+        epochs=epochs,
     )
 
     best_val_loss = float("inf")
@@ -126,7 +129,8 @@ def train_uni_gru(
 
     logger.info(
         "Training UniGRU  |  params=%s  |  device=%s",
-        f"{count_parameters(model):,}", device,
+        f"{count_parameters(model):,}",
+        device,
     )
 
     for epoch in range(1, epochs + 1):
@@ -162,7 +166,10 @@ def train_uni_gru(
         if epoch % 5 == 0 or epoch == 1:
             logger.info(
                 "  Epoch %3d/%d  │  train_loss=%.6f  val_loss=%.6f",
-                epoch, epochs, avg_train, avg_val,
+                epoch,
+                epochs,
+                avg_train,
+                avg_val,
             )
 
         # ── Early stopping ──
@@ -186,6 +193,7 @@ def train_uni_gru(
 # ──────────────────────────────────────────────
 # Evaluation Helper
 # ──────────────────────────────────────────────
+
 
 def evaluate_uni_gru(
     model: UniGRU,

@@ -14,26 +14,17 @@ import logging
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from  app.config import SOTA_RESULTS_DIR as RESULTS_DIR, CLASSIC_RESULTS_DIR, TFT_QUANTILES, MODELS_DIR
-from  app.data_pipeline import load_and_engineer_features
-from  app.evaluation import build_comparison_table, print_comparison
-from  app.utils import seed_everything, setup_logging, timer
-from  app.visualization import (
-    plot_attention_heatmap,
-    plot_comparison_bar,
-    plot_fan_chart,
-    plot_forecast,
-    plot_variable_importance,
-)
-
-from  app.sota.tft_model import (
+from app.config import CLASSIC_RESULTS_DIR, MODELS_DIR
+from app.config import SOTA_RESULTS_DIR as RESULTS_DIR
+from app.data_pipeline import load_and_engineer_features
+from app.evaluation import build_comparison_table, print_comparison
+from app.sota.tft_model import (
     build_tft,
     build_tft_datasets,
     evaluate_tft,
@@ -41,6 +32,14 @@ from  app.sota.tft_model import (
     get_quantile_predictions,
     prepare_tft_dataframe,
     train_tft,
+)
+from app.utils import seed_everything, setup_logging, timer
+from app.visualization import (
+    plot_attention_heatmap,
+    plot_comparison_bar,
+    plot_fan_chart,
+    plot_forecast,
+    plot_variable_importance,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,21 +65,22 @@ def main(train_model: bool = True) -> None:
         with timer("TFT Training"):
             model, trainer = train_tft(model, train_dl, val_dl)
         # Save best checkpoint path consistently
-        best_ckpt = MODELS_DIR / f"tft-best.ckpt"
-        if trainer.checkpoint_callback.best_model_path: # type: ignore
-            Path(trainer.checkpoint_callback.best_model_path).rename(best_ckpt) # type: ignore
+        best_ckpt = MODELS_DIR / "tft-best.ckpt"
+        if trainer.checkpoint_callback.best_model_path:  # type: ignore
+            Path(trainer.checkpoint_callback.best_model_path).rename(best_ckpt)  # type: ignore
     else:
         from pytorch_forecasting import TemporalFusionTransformer
+
         model = TemporalFusionTransformer.load_from_checkpoint(model_ckpt_path)
         logger.info("Loaded TFT from saved checkpoint: %s", model_ckpt_path)
-
 
     # ── Evaluate ──
     logger.info("\n═══ TFT Evaluation ═══")
     actuals, preds, metrics = evaluate_tft(model, test_dl)
 
     plot_forecast(
-        actuals[:200], preds[:200],
+        actuals[:200],
+        preds[:200],
         title="TFT Forecast – All Junctions (Median)",
         save_path=RESULTS_DIR / "forecast_tft.png",
     )
@@ -93,7 +93,8 @@ def main(train_model: bool = True) -> None:
         # Use median as mean_pred
         median = quantile_preds.get(0.5, preds)
         plot_fan_chart(
-            actuals[:200], median[:200],
+            actuals[:200],
+            median[:200],
             {q: v[:200] for q, v in quantile_preds.items() if q != 0.5},
             title="TFT Probabilistic Forecast (Fan Chart)",
             save_path=RESULTS_DIR / "fan_chart_tft.png",
@@ -132,7 +133,8 @@ def main(train_model: bool = True) -> None:
         print_comparison(combined)
         combined.to_csv(RESULTS_DIR / "full_comparison.csv")
         plot_comparison_bar(
-            combined, metric="RMSE",
+            combined,
+            metric="RMSE",
             title="Full Model Comparison – RMSE",
             save_path=RESULTS_DIR / "full_comparison_rmse.png",
         )
